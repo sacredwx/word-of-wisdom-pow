@@ -1,0 +1,15 @@
+FROM rust as build
+
+COPY . .
+RUN cargo test
+RUN cargo build --release
+
+FROM ubuntu
+RUN apt-get update && \
+    apt-get clean
+
+RUN mkdir -p /client
+COPY --from=build ./target/release/client /client/.
+RUN chmod +x /client/client
+
+CMD ["/client/client 0.0.0.0:8080"]

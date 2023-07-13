@@ -1,0 +1,20 @@
+FROM rust as build
+
+COPY . .
+RUN cargo test
+RUN cargo build --release
+
+FROM ubuntu
+RUN apt-get update && \
+    apt-get clean
+
+RUN mkdir -p /srv
+COPY ./word-of-wisdom.txt /srv/.
+COPY --from=build ./target/release/server /srv/.
+RUN chmod +x /srv/server
+
+ENV PORT 8080
+ENV HOST 0.0.0.0
+EXPOSE 8080
+
+CMD ["cd /srv && ./server"]

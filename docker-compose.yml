@@ -1,0 +1,22 @@
+version: "3"
+
+networks:
+  default:
+    driver: bridge
+services:
+  server:
+    image: word-of-wisdom-server
+    build:
+      dockerfile: Dockerfile.server
+    ports:
+    - 8080:8080
+    networks:
+      - default
+  client:
+    image: word-of-wisdom-client
+    build:
+      dockerfile: Dockerfile.client
+    depends_on:
+      - server
+    networks:
+      - default
