@@ -15,7 +15,6 @@ const THE_BOOK: &str = "./word-of-wisdom.txt";
 async fn main() -> Result<(), Box<dyn Error>> {
     // Load the `word-of-wisdom` book
     let rows = Arc::new(load_the_book()?);
-    // let rows:Vec<&str> = rows.collect();
 
     // Allow passing an address to listen on as the first argument of this
     // program, but otherwise we'll just set up our TCP listener on
@@ -34,25 +33,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Asynchronously wait for an inbound socket.
         let (mut socket, _) = listener.accept().await?;
 
-        // And this is where much of the magic of this server happens. We
-        // crucially want all clients to make progress concurrently, rather than
-        // blocking one on completion of another. To achieve this we use the
-        // `tokio::spawn` function to execute the work in the background.
-        //
-        // Essentially here we're executing a new task to run concurrently,
-        // which will allow all of our clients to be processed concurrently.
-
+        // Clone the reference for the rows object in order to use asynchronously
         let rows = Arc::clone(&rows);
 
         tokio::spawn(async move {
             println!("Connection accepted");
 
-            // Send challenge
-
+            // Create new random challenge
             let challenge = Challenge::new_rand();
-
             println!("New challenge: {:?}", challenge.challenge);
 
+            // Send the challenge
             socket
                 .write_all(
                     &bincode::serialize(&challenge.challenge)
@@ -62,26 +53,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .expect("failed to write data to socket");
 
             // Awaiting response
-
             let mut buf = vec![0; SOLUTION_SIZE];
             socket
                 .read_exact(&mut buf)
                 .await
                 .expect("failed to read data from socket");
+            // Receiving the solution
             let solution: [u8; SOLUTION_SIZE] =
                 bincode::deserialize(&buf).expect("failed to deserialize the solution");
             println!("Solution received: {:?}", solution);
 
-            // Check the solution
+            // Check the solution for corectness
             let response = if challenge.check_solution(&solution) {
                 println!("Solution {:?} correct!", solution);
+                // Correct solution! Let's choose a row from the book!
                 rows.choose(&mut rand::thread_rng())
                     .expect("failed to choose a row from the book")
             } else {
+                // Bad solution!
                 println!("Solution {:?} FAILED!!!", solution);
                 "Trtying to cheat uh?!"
             };
 
+            // Send the response
             socket
                 .write_all(&bincode::serialize(response).expect("failed to serialize the response"))
                 .await
