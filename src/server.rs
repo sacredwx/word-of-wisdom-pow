@@ -1,5 +1,5 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use std::error::Error;
 use std::sync::Arc;
@@ -7,6 +7,7 @@ use std::{env, fs};
 
 use rand::seq::SliceRandom;
 
+use word_of_wisdom::server_error::ServerError;
 use word_of_wisdom::{Challenge, SOLUTION_SIZE};
 
 const THE_BOOK: &str = "./word-of-wisdom.txt";
@@ -31,57 +32,63 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         // Asynchronously wait for an inbound socket.
-        let (mut socket, _) = listener.accept().await?;
+        let (socket, _) = listener.accept().await?;
 
         // Clone the reference for the rows object in order to use asynchronously
         let rows = Arc::clone(&rows);
 
         tokio::spawn(async move {
-            println!("Connection accepted");
-
-            // Create new random challenge
-            let challenge = Challenge::new_rand();
-            println!("New challenge: {:?}", challenge.challenge);
-
-            // Send the challenge
-            socket
-                .write_all(
-                    &bincode::serialize(&challenge.challenge)
-                        .expect("failed to serialize the challenge"),
-                )
-                .await
-                .expect("failed to write data to socket");
-
-            // Awaiting response
-            let mut buf = vec![0; SOLUTION_SIZE];
-            socket
-                .read_exact(&mut buf)
-                .await
-                .expect("failed to read data from socket");
-            // Receiving the solution
-            let solution: [u8; SOLUTION_SIZE] =
-                bincode::deserialize(&buf).expect("failed to deserialize the solution");
-            println!("Solution received: {:?}", solution);
-
-            // Check the solution for corectness
-            let response = if challenge.check_solution(&solution) {
-                println!("Solution {:?} correct!", solution);
-                // Correct solution! Let's choose a row from the book!
-                rows.choose(&mut rand::thread_rng())
-                    .expect("failed to choose a row from the book")
-            } else {
-                // Bad solution!
-                println!("Solution {:?} FAILED!!!", solution);
-                "Trtying to cheat uh?!"
-            };
-
-            // Send the response
-            socket
-                .write_all(&bincode::serialize(response).expect("failed to serialize the response"))
-                .await
-                .expect("failed to write data to socket");
+            match handle_request(socket, rows).await {
+                Err(e) => println!("{:?}", e),
+                Ok(_) => println!("Connection successfully done"),
+            }
         });
     }
+}
+
+async fn handle_request(mut socket: TcpStream, rows: Arc<Vec<String>>) -> Result<(), ServerError> {
+    println!("Connection accepted");
+
+    // Create new random challenge
+    let challenge = Challenge::new_rand();
+    println!("New challenge: {:?}", challenge.challenge);
+
+    // Send the challenge
+    socket
+        .write_all(&bincode::serialize(&challenge.challenge).map_err(|_| ServerError::Serialize)?)
+        .await
+        .map_err(|_| ServerError::Communication)?;
+
+    // Awaiting response
+    let mut buf = vec![0; SOLUTION_SIZE];
+    socket
+        .read_exact(&mut buf)
+        .await
+        .map_err(|_| ServerError::Communication)?;
+    // Receiving the solution
+    let solution: [u8; SOLUTION_SIZE] =
+        bincode::deserialize(&buf).map_err(|_| ServerError::Deserialize)?;
+    println!("Solution received: {:?}", solution);
+
+    // Check the solution for corectness
+    let response = if challenge.check_solution(&solution) {
+        println!("Solution {:?} correct!", solution);
+        // Correct solution! Let's choose a row from the book!
+        rows.choose(&mut rand::thread_rng())
+            .ok_or(ServerError::DataSelectionError)?
+    } else {
+        // Bad solution!
+        println!("Solution {:?} FAILED!!!", solution);
+        "Trtying to cheat uh?!"
+    };
+
+    // Send the response
+    socket
+        .write_all(&bincode::serialize(response).map_err(|_| ServerError::Serialize)?)
+        .await
+        .map_err(|_| ServerError::Communication)?;
+
+    Ok(())
 }
 
 fn load_the_book() -> Result<Vec<String>, Box<dyn Error>> {

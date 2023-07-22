@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 
 pub const CHALLENGE_SIZE: usize = 16;
 pub const SOLUTION_SIZE: usize = 16;
-pub const COMPLEXITY: usize = 5;
+pub const COMPLEXITY: usize = 4;
 
 #[derive(Debug)]
 pub struct Challenge {
@@ -61,6 +61,9 @@ impl Challenge {
 
         let mut leading_zeros = 0;
 
+        // Hexadecimal check 
+        // 0000a718d067546a563908f32feef858f03ccfff4ce16b77e172287ac53fb3ee - passes with complexity 4
+        // only 2 bytes are 0x00
         for c in hash.iter().take(COMPLEXITY / 2 + 1) {
             if c >> 4 == 0 {
                 leading_zeros += 1;
